@@ -1,4 +1,4 @@
-# VIM emulator for Godot 4 (version 4.3.0)
+# VIM emulator for Godot 4 (version 4.4.1)
 
 ## What is this?
 This is a Godot 4 plugin to emulates VIM-like editor behavior witin Godot editor itself (i.e. after installed and enabled, one could edit (kind of) like in VIM.

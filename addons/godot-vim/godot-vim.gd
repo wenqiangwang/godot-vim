@@ -280,7 +280,7 @@ static func find_first_node_of_type(p: Node, type: String) -> Node:
     return null
 
 
-class Command:
+class VimCommand:
 
     ###  MOTIONS
 
@@ -1592,11 +1592,11 @@ class CommandDispatcher:
                 return false
 
             var when : String = command.get("when", '')
-            if when and not Callable(Command, when).call(ed, vim):
+            if when and not Callable(VimCommand, when).call(ed, vim):
                 return false
 
             var when_not: String = command.get("when_not", '')
-            if when_not and Callable(Command, when_not).call(ed, vim):
+            if when_not and Callable(VimCommand, when_not).call(ed, vim):
                 return false
 
             return true
@@ -1699,7 +1699,7 @@ class CommandDispatcher:
             print("  Action: %s %s" % [action, action_args])
 
         action_args.repeat = max(1, vim.current.input_state.get_repeat())
-        Callable(Command, action).call(action_args, ed, vim)
+        Callable(VimCommand, action).call(action_args, ed, vim)
 
         if vim.current.visual_mode and action != "enter_visual_mode":
             vim.current.enter_normal_mode()
@@ -1709,7 +1709,7 @@ class CommandDispatcher:
             print("  Operator %s %s on %s" % [operator, operator_args, ed.selection()])
 
         # Perform operation
-        Callable(Command, operator).call(operator_args, ed, vim)
+        Callable(VimCommand, operator).call(operator_args, ed, vim)
         
         if operator_args.get("maintain_position", false):
             var original_pos = operator_args.get("original_pos")
@@ -1735,7 +1735,7 @@ class CommandDispatcher:
             motion_args.repeat_is_explicit = false
 
         # Calculate new position
-        var result = Callable(Command, motion).call(cur, motion_args, ed, vim)
+        var result = Callable(VimCommand, motion).call(cur, motion_args, ed, vim)
         if result is Position:
             var new_pos : Position = result
             if new_pos.column == INF_COL: # INF_COL means the last column

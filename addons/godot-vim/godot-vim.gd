@@ -159,6 +159,8 @@ var the_ed := EditorAdaptor.new() # The current editor adaptor
 var the_vim := Vim.new()
 var the_dispatcher := CommandDispatcher.new(the_key_map) # The command dispatcher
 var disabled := false
+var shader_editor_plugin : EditorPlugin = null
+var last_focused_editor : CodeEdit = null
 
 
 func _enter_tree() -> void:
@@ -178,6 +180,9 @@ func _enter_tree() -> void:
     script_editor.script_close.connect(on_script_closed)
     on_script_changed(script_editor.get_current_script())
 
+    # Setup shader editor (deferred to ensure editor is fully loaded)
+    call_deferred("_setup_shader_editor")
+
     var settings = editor_interface.get_editor_settings()
     settings.settings_changed.connect(on_settings_changed)
     on_settings_changed()
@@ -185,6 +190,31 @@ func _enter_tree() -> void:
     var find_bar = find_first_node_of_type(script_editor, 'FindReplaceBar')
     var find_bar_line_edit : LineEdit = find_first_node_of_type(find_bar, 'LineEdit')
     find_bar_line_edit.text_changed.connect(on_search_text_changed)
+
+
+func _process(_delta: float) -> void:
+    if disabled:
+        return
+    
+    # Check for shader editor focus changes
+    _check_and_update_shader_editor()
+
+
+func _setup_shader_editor() -> void:
+    var main_screen = editor_interface.get_editor_main_screen()
+    shader_editor_plugin = find_first_node_of_type(main_screen, "TextShaderEditor")
+    
+
+func _update_shader_editor() -> void:
+    # Find the shader code editor
+    if not shader_editor_plugin:
+        return
+        
+    var code_edit = find_first_node_of_type(shader_editor_plugin, "CodeEdit")
+    if not code_edit:
+        return
+    
+    _update_shader_editor_with_code_edit(code_edit)
 
 
 func _input(event) -> void:
@@ -213,6 +243,85 @@ func _input(event) -> void:
 
     if the_dispatcher.dispatch(key, the_vim, the_ed):
         get_viewport().set_input_as_handled()
+
+
+func _check_and_update_shader_editor() -> void:
+    # If shader editor plugin hasn't been found yet, try to find it
+    if not shader_editor_plugin:
+        _setup_shader_editor()
+    
+    # First try to use the found shader editor plugin
+    if shader_editor_plugin:
+        var code_edit = find_first_node_of_type(shader_editor_plugin, "CodeEdit")
+        if code_edit and code_edit.has_focus() and code_edit != last_focused_editor:
+            last_focused_editor = code_edit
+            _update_shader_editor()
+            return
+    
+    # Fallback: Search for any focused CodeEdit that isn't the script editor
+    var base_control = editor_interface.get_base_control()
+    var focused_code_edit = _find_focused_code_edit(base_control)
+    
+    if focused_code_edit and focused_code_edit != last_focused_editor:
+        # Check if this is NOT the script editor
+        var script_editor = editor_interface.get_script_editor()
+        var script_editor_base = script_editor.get_current_editor()
+        var is_script_editor = false
+        
+        if script_editor_base:
+            var script_code_edit = script_editor_base.get_base_editor() as CodeEdit
+            is_script_editor = (focused_code_edit == script_code_edit)
+        
+        if not is_script_editor:
+            # This is likely the shader editor or another code editor
+            last_focused_editor = focused_code_edit
+            _update_shader_editor_with_code_edit(focused_code_edit)
+            if DEBUGGING:
+                print("Found non-script CodeEdit with focus")
+            return
+    
+    # Also check if we switched back to script editor
+    var script_editor = editor_interface.get_script_editor()
+    var script_editor_base = script_editor.get_current_editor()
+    if script_editor_base:
+        var script_code_edit = script_editor_base.get_base_editor() as CodeEdit
+        if script_code_edit and script_code_edit.has_focus() and script_code_edit != last_focused_editor:
+            last_focused_editor = script_code_edit
+            on_script_changed(script_editor.get_current_script())
+
+
+func _find_focused_code_edit(node: Node) -> CodeEdit:
+    # Recursively find a CodeEdit that has focus
+    if node is CodeEdit and node.has_focus():
+        return node
+    
+    for child in node.get_children():
+        var result = _find_focused_code_edit(child)
+        if result:
+            return result
+    
+    return null
+
+
+func _update_shader_editor_with_code_edit(code_edit: CodeEdit) -> void:
+    # Update shader editor using a specific CodeEdit instance
+    if not code_edit:
+        return
+    
+    # Create a unique session identifier for this shader editor
+    var shader_session_key = code_edit
+    
+    the_vim.set_current_session(shader_session_key, the_ed)
+    the_ed.set_code_editor(code_edit)
+    the_ed.set_block_caret(not the_vim.current.insert_mode)
+    
+    if not code_edit.is_connected("caret_changed", on_caret_changed):
+        code_edit.caret_changed.connect(on_caret_changed)
+    if not code_edit.is_connected("lines_edited_from", on_lines_edited_from):
+        code_edit.lines_edited_from.connect(on_lines_edited_from)
+    
+    if DEBUGGING:
+        print("Switched to shader/code editor: ", code_edit.get_path())
 
 
 func on_script_changed(s: Script) -> void:
@@ -1199,16 +1308,16 @@ class Vim:
     var search_buffer: String
     var macro_manager := MacroManager.new(self)
 
-    func set_current_session(s: Script, ed: EditorAdaptor):
-        var session : VimSession = sessions.get(s)
+    func set_current_session(resource: Variant, ed: EditorAdaptor):
+        var session : VimSession = sessions.get(resource)
         if not session:
             session = VimSession.new()
             session.ed = ed
-            sessions[s] = session
+            sessions[resource] = session
         current = session
 
-    func remove_session(s: Script):
-        sessions.erase(s)
+    func remove_session(resource: Variant):
+        sessions.erase(resource)
 
 
 class CharIterator:
